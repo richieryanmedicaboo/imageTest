@@ -8,6 +8,15 @@ const imageminJpegRecompress = require('imagemin-jpeg-recompress');
 var path = require('path');
 var gm = require('gm').subClass({ imageMagick: true });
 var dir = __dirname;
+//var knox = require('knox');
+var AWS = require('aws-sdk');
+AWS.config.update({
+  accessKeyId: "key",
+  secretAccessKey: "key"
+});
+var s3 = new AWS.S3();
+var myBucket = 'upload-test-v2';
+var myKey = 'key'
 
 
 var app = new express();
@@ -36,20 +45,51 @@ app.post('/', multer({ storage: multer.memoryStorage() }).single('upl'), functio
 	/* example output:
 	{ title: 'abc' }
 	 */
-  console.log('imagemin')
+  //console.log('imagemin')
   imagemin.buffer(req.file.buffer ,{
     plugins: [
       imageminJpegRecompress({ quality: "low", min: 50, max: 50 })
     ]
   }).catch(()=>{}).then(buffer => {
-    console.log('Images optimized')
-    gm(buffer, req.file.originalname)
-      //.resize(40, 40, "!")
-      .write(dir + '/optimized.jpg', function (err) {
-        if (err) return console.dir(arguments)
-        console.log(this.outname + ' created  :: ' + arguments[ 3 ])
+//    client.putBuffer(buffer, 'test.jpg', {'Content-Length': Buffer.byteLength(buffer), 'Content-Type': req.file.mimetype}, function(err, res){
+//        if (res != null)
+//          res.resume();
+//
+ //       if (err || res.statusCode !== 200) {
+   //       console.log('S3 addStream --> ');
+     //     if (err)
+       //     console.log(err);
+         // else {
+      //      err = {
+  //            code: 400,
+  //            message: res.statusMessage
+  //          };
+  //          console.log(res.statusCode);
+  //          console.log(res.statusMessage);
+  //        }
+  //      }
+  //    });
+    var params = {
+      Bucket: myBucket,
+      Key: myKey,
+      Body: buffer
+    };
+
+    s3.putObject(params, function (err, data) {
+      if (err) {
+        console.log("Error PUTing file:", err);
       }
-      ) 
+      console.log("S3 RESPONSE:", data);
+    });
+
+    console.log('Images optimized')
+    //gm(buffer, req.file.originalname)
+      //.resize(40, 40, "!")
+      //.write(dir + '/optimized.jpg', function (err) {
+      //  if (err) return console.dir(arguments)
+      //  console.log(this.outname + ' created  :: ' + arguments[ 3 ])
+      //}
+     // ) 
   });
 
   
