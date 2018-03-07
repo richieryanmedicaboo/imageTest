@@ -1,34 +1,68 @@
 var express = require('express');
-var multer = require('multer'),
-  bodyParser = require('body-parser'),
-  path = require('path');
-var fs = require('fs');
-const imagemin = require('imagemin');
-const imageminJpegRecompress = require('imagemin-jpeg-recompress');
+var multer = require('multer');
+var bodyParser = require('body-parser');
 var path = require('path');
+//imagemin (image compressor)
+var imagemin = require('imagemin');
+var imageminJpegRecompress = require('imagemin-jpeg-recompress');
+var imageminPngquant = require('imagemin-pngquant');
+//gm (image manipulation)
 var gm = require('gm').subClass({ imageMagick: true });
-var dir = __dirname;
-//var knox = require('knox');
+//AWS
 var AWS = require('aws-sdk');
-AWS.config.update({
-  accessKeyId: "key",
-  secretAccessKey: "key"
-});
 var s3 = new AWS.S3();
-var myBucket = 'upload-test-v2';
-var myKey = 'key'
 
+var myBucket = 'upload-test-v2';
+
+
+
+//buffer = image buffer
+//filename = image name
+//quality = determine compression result (1-100)
+//bucket = bucket to upload
+//size = thumbnail size (size x size)
+
+//Compress with imagemin
+function compressUploadImage(buffer, filename, quality, bucket) {
+  imagemin.buffer(buffer, {
+    plugins: [
+      imageminJpegRecompress({ min: quality, max: quality }),
+      imageminPngquant({ quality: quality + "-" + quality, speed: 10 }),
+    ]
+  }).catch(() => { console.log("imagemin error") }).then(buffer => {
+    console.log('Image compressed');
+    uploadImage(buffer, Date.now().toString() + "_" + filename, bucket);
+  });
+}
+
+//Upload to s3
+function uploadImage(buffer, filename, bucket) {
+  var params = {
+    Bucket: bucket,
+    Key: filename,
+    Body: buffer
+  };
+  s3.putObject(params, function (err, data) {
+    if (err) {
+      console.log("Error PUTing file:", err);
+    }
+    console.log("S3 RESPONSE:", data);
+    console.log("Uploaded picture: " + params.Key);
+  });
+}
+
+//Resize with gm
+function uploadThumbnail(buffer, filename, size, bucket) {
+  gm(buffer, filename)
+    .resize(size, size, "!")
+    .toBuffer(function (err, buffer) {
+      if (err) return console.log(err)
+      uploadImage(buffer, "thumbnail_" + Date.now().toString() + "_" + filename, bucket)
+    });
+}
 
 var app = new express();
 
-var storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, './uploads')
-  },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname)
-  }
-})
 
 app.use(bodyParser.json());
 
@@ -41,58 +75,14 @@ app.get('/', function (req, res) {
 });
 
 app.post('/', multer({ storage: multer.memoryStorage() }).single('upl'), function (req, res) {
-  console.log(req.body); //form fields
+  //console.log(req.body); //form fields
 	/* example output:
 	{ title: 'abc' }
 	 */
-  //console.log('imagemin')
-  imagemin.buffer(req.file.buffer ,{
-    plugins: [
-      imageminJpegRecompress({ quality: "low", min: 50, max: 50 })
-    ]
-  }).catch(()=>{}).then(buffer => {
-//    client.putBuffer(buffer, 'test.jpg', {'Content-Length': Buffer.byteLength(buffer), 'Content-Type': req.file.mimetype}, function(err, res){
-//        if (res != null)
-//          res.resume();
-//
- //       if (err || res.statusCode !== 200) {
-   //       console.log('S3 addStream --> ');
-     //     if (err)
-       //     console.log(err);
-         // else {
-      //      err = {
-  //            code: 400,
-  //            message: res.statusMessage
-  //          };
-  //          console.log(res.statusCode);
-  //          console.log(res.statusMessage);
-  //        }
-  //      }
-  //    });
-    var params = {
-      Bucket: myBucket,
-      Key: myKey,
-      Body: buffer
-    };
+  compressUploadImage(req.file.buffer, req.file.originalname, 'low', myBucket);
+  uploadThumbnail(req.file.buffer, req.file.originalname, 40, myBucket);
 
-    s3.putObject(params, function (err, data) {
-      if (err) {
-        console.log("Error PUTing file:", err);
-      }
-      console.log("S3 RESPONSE:", data);
-    });
 
-    console.log('Images optimized')
-    //gm(buffer, req.file.originalname)
-      //.resize(40, 40, "!")
-      //.write(dir + '/optimized.jpg', function (err) {
-      //  if (err) return console.dir(arguments)
-      //  console.log(this.outname + ' created  :: ' + arguments[ 3 ])
-      //}
-     // ) 
-  });
-
-  
 
   console.log(req.file); //form files
 	/* example output:
@@ -108,5 +98,5 @@ app.post('/', multer({ storage: multer.memoryStorage() }).single('upl'), functio
   res.status(204).end();
 });
 
-var port = 3000;
+var port = 3010;
 app.listen(port, function () { console.log('listening on port ' + port); });
